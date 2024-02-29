@@ -372,7 +372,7 @@ cor_pass      db '12345$'
 
 end Start
 
-;; sefic ----> 12345
-;; sefic?12345 ---> WIN
+;; cegik ----> 12345
+;; cegik?12345 ---> WIN
 
 
