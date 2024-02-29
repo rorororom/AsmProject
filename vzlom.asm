@@ -190,19 +190,19 @@ SymbolDF:
     mov ax, 5                       ; if 'c' <= symbol <= 'e' return 5
     jmp endQ
 SymbolGI:
-    mov ax, 6                       ; if 'f' <= symbol <= 'h' return 4
+    mov ax, 6                       ; if 'f' <= symbol <= 'h' return 6
     jmp endQ
 SymbolJL:
-    mov ax, 7                       ; if 'i' <= symbol <= 'k' return 4
+    mov ax, 7                       ; if 'i' <= symbol <= 'k' return 7
     jmp endQ
 SymbolMO:
-    mov ax, 8                       ; if 'l' <= symbol <= 'n' return 4
+    mov ax, 8                       ; if 'l' <= symbol <= 'n' return 8
     jmp endQ
 SymbolPR:
-    mov ax, 9                       ; if 'o' <= symbol <= 'r' return 4
+    mov ax, 9                       ; if 'o' <= symbol <= 'p' return 9
     jmp endQ
 SymbolSU:
-    mov ax, 11                      ; if 'r' <= symbol <= 't' return 4
+    mov ax, 11                      ; if 'r' <= symbol <= 't' return 11
     jmp endQ
 ;---------------------------------------------------------------------
 
