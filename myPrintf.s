@@ -4,6 +4,10 @@ section .text
 _MyPrintf:
     pop rax                                 ; Сохраняем адрес возврата в rax и
                                             ; копируем его в переменную ret_adress
+    ; push    rbp
+    ; mov     rbp, rsp
+    ; sub     rsp, 32
+
     mov [rel ret_adress], rax
     xor rax, rax
 
@@ -25,13 +29,21 @@ _MyPrintf:
     pop r8
     pop r9
 
+    push rax
     mov rax, 0x2000004                      ; Системный вызов sys_write
     mov rdi, 1                              ; Файловый дескриптор stdout
     mov rdx, msg_len                        ; Длина сообщения
     mov rsi, buffer                         ; Адрес сообщения
     syscall                                 ; Вызов ядра
 
-    ; xor rax, rax                            ; Очищаем регистр rax
+    mov rdi, buffer          ; Загружаем адрес буфера в rdi
+    mov rcx, 512             ; Загружаем размер буфера в rcx
+    xor al, al               ; Обнуляем al
+    rep stosb                ; Заполняем буфер нулями
+
+    pop rax                          ; Очищаем регистр rax
+    ; add     rsp, 32
+    ; pop     rbp
     push qword [rel ret_adress]             ; Восстанавливаем адрес возврата и
                                             ; возвращаемся из функции
     ret
@@ -61,8 +73,9 @@ PrintFFF:
     PrintExit:                              ; Метка выхода из функци
                                             ; Освобождаем резервированное место на стеке и
                                             ; восстанавливаем базовый указатель
-        call AddNewLine
+        ; call AddNewLine
         pop rbp
+
         mov rax, r8
         ret
 
@@ -79,19 +92,19 @@ InputType:
     je TypeSymbolProcent
     cmp al, 'x'
     je TypeHex
-    cmp al, 'o'
-    je TypeOct
     cmp al, 'b'
     je TypeBinary
+    cmp al, 'o'
+    je TypeOct
 
     jmp PrintFLoop
 
 TypeSymbolProcent:
     mov byte [rbx + r8], al             ; Копируем символ в буфер
+    inc r8                               ; Увеличиваем указатель на буфер
+    inc rdi                              ; Переходим к следующему символу в форматной строке
+    jmp PrintFLoop                       ; Переходим к следующей итерации цикла
 
-    inc r8
-
-    jmp PrintFLoop               ; Переходим к следующей итерации цикла
 
 TypeString:
     add r9, 8
@@ -120,19 +133,18 @@ TypeInt:
     add r9, 16
     mov rax, qword [rsp + r9]  ; Получаем адрес строки из аргументов
 
-itoa:
     xor rdx, rdx          ; Обнуляем rdx для деления
-    xor rcx, rcx          ; Обнуляем rdi для счетчика
-    mov r9, 10           ; Сохраняем основание системы счисления
+    xor rcx, rcx          ; Обнуляем rcx для счетчика
+    mov r9, 10            ; Сохраняем основание системы счисления
     cmp rax, 0
-    jne check_negative  ; Если число не ноль, проверяем на отрицательность
-    mov byte [rbx], '0' ; Если число ноль, записываем символ '0' в буфер
-    inc r8              ; Увеличиваем счетчик
-    jmp AfterItoaLoop   ; Завершаем функцию
+    jne check_negative    ; Если число не ноль, проверяем на отрицательность
+    mov byte [rbx], '0'   ; Если число ноль, записываем символ '0' в буфер
+    inc r8                ; Увеличиваем счетчик
+    jmp AfterItoaLoop     ; Завершаем функцию
 
 check_negative:
     test rax, 80000000h    ; Проверяем знак числа
-    jz itoa_loop                  ; Если число положительное, начинаем преобразование
+    jz itoa_loop           ; Если число положительное, начинаем преобразование
 
     ; Если число отрицательное, переходим к метке number_is_negative
 
@@ -166,15 +178,13 @@ AfterItoaLoop:
     inc rdi
     jmp PrintFLoop  ; Завершаем цикл
 
+
 TypeHex:
-    push r9
-    add r9, 16
+    add r9, 8
     mov rax, qword [rsp + r9]  ; Получаем адрес строки из аргументов
 
 itoa_hex:
-    xor rdx, rdx          ; Обнуляем rdx для деления
     xor rcx, rcx          ; Обнуляем rcx для счетчика
-    mov r9, 16            ; Сохраняем основание системы счисления (16 для шестнадцатеричной системы)
 
     cmp rax, 0            ; Проверяем, не является ли число нулем
     jnz itoa_hex_loop     ; Если число не ноль, начинаем преобразование
@@ -189,13 +199,15 @@ itoa_hex_loop:
     jz BuffHexLoop        ; Если число равно нулю, завершаем
 
     inc rcx               ; Увеличиваем счетчик разрядов
-    xor rdx, rdx          ; Обнуляем rdx для деления
-    div r9                ; Делим число на основание системы счисления (mod в rdx, res в rax)
+    mov rdx, rax          ; Сохраняем число в rdx для деления
+    and rdx, 0xF          ; Получаем остаток от деления на 16
     push rdx              ; Сохраняем остаток на стеке
+    shr rax, 4            ; Делим число на основание системы счисления (сдвиг вправо на 4 бита эквивалентен делению на 16)
     jmp itoa_hex_loop     ; Повторяем цикл
 
 BuffHexLoop:
-    pop rax               ; Извлекаем сохраненные остатки из стека
+    pop rdx               ; Извлекаем сохраненные остатки из стека
+    movzx rax, dl        ; Помещаем остаток в rax для дальнейшего использования
     add al, '0'
     cmp al, '9'
     jbe HexLoopCheck      ; Переходим на проверку диапазона '0' - '9'
@@ -207,20 +219,15 @@ HexLoopCheck:
     jnz BuffHexLoop       ; Повторяем, пока не завершим все разряды
 
 AfterItoaHexLoop:
-    pop r9
-    add r9, 8
     inc rdi
     jmp PrintFLoop  ; Завершаем цикл
 
 TypeOct:
-    push r9
-    add r9, 16
+    add r9, 8
     mov rax, qword [rsp + r9]  ; Получаем адрес строки из аргументов
 
 itoa_oct:
-    xor rdx, rdx          ; Обнуляем rdx для деления
     xor rcx, rcx          ; Обнуляем rcx для счетчика
-    mov r9, 8             ; Сохраняем основание системы счисления (8 для восьмеричной системы)
 
     cmp rax, 0            ; Проверяем, не является ли число нулем
     jnz itoa_oct_loop     ; Если число не ноль, начинаем преобразование
@@ -235,34 +242,32 @@ itoa_oct_loop:
     jz BuffOctLoop        ; Если число равно нулю, завершаем
 
     inc rcx               ; Увеличиваем счетчик разрядов
-    xor rdx, rdx          ; Обнуляем rdx для деления
-    div r9                ; Делим число на основание системы счисления (mod в rdx, res в rax)
+    mov rdx, rax          ; Сохраняем число в rdx для деления
+    and rdx, 7            ; Получаем остаток от деления на 8
     push rdx              ; Сохраняем остаток на стеке
+    shr rax, 3            ; Делим число на основание системы счисления (сдвиг вправо на 3 бита эквивалентен делению на 8)
     jmp itoa_oct_loop     ; Повторяем цикл
 
 BuffOctLoop:
-    pop rax               ; Извлекаем сохраненные остатки из стека
-    add al, '0'
-    mov byte [rbx + r8], al  ; Копируем символ в буфер
+    pop rdx               ; Извлекаем сохраненные остатки из стека
+    add dl, '0'
+    mov byte [rbx + r8], dl  ; Копируем символ в буфер
     inc r8
     dec rcx               ; Уменьшаем счетчик
     jnz BuffOctLoop       ; Повторяем, пока не завершим все разряды
 
 AfterItoaOctLoop:
-    pop r9
-    add r9, 8
     inc rdi
     jmp PrintFLoop  ; Завершаем цикл
 
+
 TypeBinary:
-    push r9
-    add r9, 16
+    add r9, 8
     mov rax, qword [rsp + r9]  ; Получаем адрес строки из аргументов
 
 itoa_binary:
     xor rdx, rdx          ; Обнуляем rdx для деления
     xor rcx, rcx          ; Обнуляем rcx для счетчика
-    mov r9, 2             ; Сохраняем основание системы счисления (2 для бинарной системы)
 
     cmp rax, 0            ; Проверяем, не является ли число нулем
     jnz itoa_binary_loop  ; Если число не ноль, начинаем преобразование
@@ -273,28 +278,28 @@ itoa_binary:
     jmp AfterItoaBinaryLoop  ; Завершаем функцию
 
 itoa_binary_loop:
-    test rax, rax         ; Проверяем, не закончилось ли число
+    test rax, rax        ; Проверяем, не закончилось ли число
     jz BuffBinaryLoop     ; Если число равно нулю, завершаем
 
     inc rcx               ; Увеличиваем счетчик разрядов
-    xor rdx, rdx          ; Обнуляем rdx для деления
-    div r9                ; Делим число на основание системы счисления (mod в rdx, res в rax)
+    mov rdx, rax          ; Сохраняем число в rdx для деления
+    and rdx, 1            ; Получаем остаток от деления на 2
     push rdx              ; Сохраняем остаток на стеке
+    shr rax, 1            ; Делим число на 2
     jmp itoa_binary_loop  ; Повторяем цикл
 
 BuffBinaryLoop:
-    pop rax               ; Извлекаем сохраненные остатки из стека
-    add al, '0'
-    mov byte [rbx + r8], al  ; Копируем символ в буфер
+    pop rdx               ; Извлекаем сохраненные остатки из стека
+    add dl, '0'
+    mov byte [rbx + r8], dl  ; Копируем символ в буфер
     inc r8
     dec rcx               ; Уменьшаем счетчик
     jnz BuffBinaryLoop    ; Повторяем, пока не завершим все разряды
 
 AfterItoaBinaryLoop:
-    pop r9
-    add r9, 8
     inc rdi
     jmp PrintFLoop  ; Завершаем цикл
+
 
 TypeChar:
     add r9, 8
@@ -305,7 +310,7 @@ TypeChar:
     inc r8
     inc rsi                             ; Переходим к следующему символу
 
-    jmp AfterItoaLoop              ; Переходим к следующей итерации цикла
+    jmp AfterItoaBinaryLoop              ; Переходим к следующей итерации цикла
 
 AddNewLine:
     mov byte [rbx + r8], 10                 ; добавляем символ новой строки (LF)
