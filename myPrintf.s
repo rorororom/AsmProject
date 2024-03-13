@@ -166,45 +166,53 @@ AfterStringLoop:
 TypeInt:
     push r9
     add r9, 16
-    mov eax, [rsp + r9]           ; получаем значение аргумента из стека
+    mov rax, qword [rsp + r9]  ; Получаем адрес строки из аргументов
 
-    xor rdx, rdx
-    xor rcx, rcx
-    mov r9, 10                          ; r9 = основание системы счисления
+itoa:
+    xor rdx, rdx          ; Обнуляем rdx для деления
+    xor rcx, rcx          ; Обнуляем rdi для счетчика
+    mov r9, 10           ; Сохраняем основание системы счисления
     cmp rax, 0
-    jne check_negative                  ; eсли число не ноль, проверяем на отрицательность
-    mov byte [rbx], '0'                 ; eсли число ноль, записываем символ '0' в буфер
-    inc r8
-    jmp AfterItoaLoop
+    jne check_negative  ; Если число не ноль, проверяем на отрицательность
+    mov byte [rbx], '0' ; Если число ноль, записываем символ '0' в буфер
+    inc r8              ; Увеличиваем счетчик
+    jmp AfterItoaLoop   ; Завершаем функцию
 
 check_negative:
-    test rax, 80000000h                 ; проверяем знак числа
-    jz itoa_loop                        ; если число положительное, начинаем преобразование
+    test rax, 80000000h    ; Проверяем знак числа
+    jz itoa_loop                  ; Если число положительное, начинаем преобразование
 
-; если число отрицательное, переходим к метке number_is_negative
+    ; Если число отрицательное, переходим к метке number_is_negative
+
 number_is_negative:
-    neg eax                             ; изменяем знак числа на положительный
-    mov byte [rbx + r8], '-'            ; записываем минус перед числом
-    inc r8
+    ; Обработка отрицательных чисел
+    neg eax                         ; Изменяем знак числа на положительный
+    mov byte [rbx + r8], '-'        ; Записываем минус перед числом
+    inc r8                          ; Увеличиваем счетчик
 
 itoa_loop:
-    test rax, rax                       ; проверяем, не закончилось ли число
-    jz BuffNumLoop                      ; если число равно нулю, завершаем
+    test rax, rax         ; Проверяем, не закончилось ли число
+    jz BuffNumLoop        ; Если число равно нулю, завершаем
 
-    inc rcx
-    xor rdx, rdx
-    div r9                              ; делим число на основание системы счисления
-    push rdx                            ; cохраняем остаток на стеке
-    jmp itoa_loop                       ; повторяем цикл
+    inc rcx               ; Увеличиваем счетчик разрядов
+    xor rdx, rdx          ; Обнуляем rdx для деления
+    div r9                ; Делим число на основание системы счисления (mod в rdx, res в rax)
+    push rdx              ; Сохраняем остаток на стеке
+    jmp itoa_loop         ; Повторяем цикл
 
 BuffNumLoop:
-    call ConvertToBuffer
+    pop rax              ; Извлекаем сохраненные остатки из стека
+    add al, '0'
+    mov byte [rbx + r8], al             ; Копируем символ в буфер
+    inc r8
+    dec rcx              ; Уменьшаем счетчик
+    jnz BuffNumLoop      ; Повторяем, пока не завершим все разряды
 
 AfterItoaLoop:
     pop r9
     add r9, 8
     inc rdi
-    jmp PrintFLoop
+    jmp PrintFLoop  ; Завершаем цикл
 ; ====================================================================================================
 ; Как происходит деление:
 ;       DIV R9 ----> RDX:RAX \ r9
@@ -232,9 +240,8 @@ itoa_hex:
     mov rcx, 4
     mov rdi, 0xF
 
-    call CheckAndHandleZero
-    call ConvertNumber
-    call ConvertToBuffer
+    call HandleNumberCondition
+
     pop rdi
     jmp AfterLoop
 
@@ -251,9 +258,8 @@ itoa_oct:
     mov rcx, 3
     mov rdi, 7
 
-    call CheckAndHandleZero
-    call ConvertNumber
-    call ConvertToBuffer
+    call HandleNumberCondition
+
     pop rdi
     jmp AfterLoop
 ;---------------------------------------------------------------------
@@ -271,9 +277,8 @@ itoa_binary:
     mov rcx, 1
     mov rdi, 1
 
-    call CheckAndHandleZero
-    call ConvertNumber
-    call ConvertToBuffer
+    call HandleNumberCondition
+
     pop rdi
     jmp AfterLoop
 ;---------------------------------------------------------------------
@@ -304,6 +309,7 @@ ConvertToBuffer:
     pop rbp
     BuffLoop:
         pop rdx                             ; извлекаем сохраненные остатки из стека
+        mov [rel save_rsi], rsi
         movzx rax, dl                       ; помещаем остаток в rax
         mov rsi, table
         add rsi, rax
@@ -314,6 +320,7 @@ ConvertToBuffer:
         dec rcx
         jnz BuffLoop                        ; повторяем, пока не завершим все разряды
     push rbp
+    mov rsi, qword [rel save_rsi]
     ret
 
 ; ====================================================================================================
@@ -332,14 +339,14 @@ ConvertNumber:
     xor rbp, rbp
 
 convert_loop:
-    test rax, rax                      ; Проверяем, не закончилось ли число
-    jz end_convert_loop                ; Если число равно нулю, завершаем
+    test rax, rax                       ; проверяем, не закончилось ли число
+    jz end_convert_loop                 ; если число равно нулю, завершаем
 
-    inc rbp                           ; Увеличиваем счетчик разрядов
-    mov rdx, rax                       ; Сохраняем число в rdx для деления
-    and rdx, rdi                         ; Получаем остаток от деления на основание системы счисления
-    push rdx                           ; Сохраняем остаток на стеке
-    sar rax, cl                   ; Делим число на основание системы счисления (сдвиг вправо на cl бит)
+    inc rbp                             ; увеличиваем счетчик разрядов
+    mov rdx, rax                        ; сохраняем число в rdx для деления
+    and rdx, rdi                        ; получаем остаток от деления на основание системы счисления
+    push rdx                            ; сохраняем остаток на стеке
+    sar rax, cl                         ; делим число на основание системы счисления (сдвиг вправо на cl бит)
 
     jmp convert_loop
 
@@ -350,19 +357,22 @@ end_convert_loop:
 
 ;---------------------------------------------------------------------
 
-CheckAndHandleZero:
+HandleNumberCondition:
     pop rbp
     mov [rel ret_a2], rbp
 
-    cmp rax, 0                        ; Проверяем, не равно ли число нулю
-    jnz NotZero                      ; Если число не равно нулю, переходим к дальнейшей обработке
-    mov byte [rbx], dil               ; Записываем символ в буфер
-    inc rcx                           ; Увеличиваем счетчик
+    cmp rax, 0                          ; проверяем, не равно ли число нулю
+    jnz NotZero                         ; если число не равно нулю, прыгаем
+    mov byte [rbx], al                  ; записываем символ в буфер
+    inc rcx
 
 NotZero:
+    call ConvertNumber                  ; преобразуем число в правильную систему овнования
+    call ConvertToBuffer                ; запись числа из стека в буффер
     push qword [rel ret_a2]
     ret
 ;---------------------------------------------------------------------
+
 align 8
 JmpTable:
     dw qword TypeBinary
@@ -374,7 +384,6 @@ JmpTable:
     dw qword TypeString
     times 4 dq 'd'
     dw qword TypeHex
-;---------------------------------------------------------------------
 
 ; ====================================================================================================
 ;                         DATA
@@ -384,6 +393,7 @@ section .data
     ret_adress dq 0
     ret_a dq 0
     ret_a2 dq 0
+    save_rsi dq 0
     buffer times 512 db 0
     msg_len equ $ - buffer
     table db "0123456789ABCDEF"
